@@ -3,15 +3,14 @@ import gspread
 import pandas as pd
 import numpy as np
 import datetime as dt
-import matplotlib as plt
 import streamlit as st
 import plotly.express as px
-import plotly.graph_objects as go
 
 from google.oauth2.service_account import Credentials
 from datetime import datetime
 from streamlit_plotly_events import plotly_events
 from typing import Dict, Set
+from millify import millify
 
 @st.cache_data()
 def load_data():
@@ -35,13 +34,15 @@ def load_data():
     df_main = df_trans.merge(df_cat,how='left',on='cat')
     
     # Remove empty dates
-    df_main = df_main[df_main['date'] != ''] 
+    df_main = df_main[df_main['date'] != '']
 
     # Convert to numeric
     df_main['gross'] = pd.to_numeric(df_main['gross'], errors = 'coerce').astype(int)
 
     # Convert to date
     df_main['date'] = pd.to_datetime(df_main['date'],dayfirst=True)
+    # Filter out future transaction
+    df_main = df_main[df_main['date'] <= pd.to_datetime(dt.date.today())]
 
     # Make txt lower case
     df_main[['person','shared','sas']] = df_main[['person','shared','sas']].apply(lambda x: x.astype(str).str.lower())
@@ -56,211 +57,384 @@ def load_data():
     df_main['year'] = df_main['date'].dt.year
     df_main['month'] = df_main['date'].dt.month
     df_main['day_txt'] = df_main['date'].dt.strftime('%A')
-    df_main['month_txt'] = df_main['date'].dt.strftime('%B')
+    df_main['month_txt'] = df_main['date'].dt.strftime('%B')       
     df_main['date'] = df_main['date'].dt.strftime('%d-%m-%Y')
+    
+
     
     return df_main
 
-def initialize_state():
-    ## Loops through the different session states to initialize it, 
-    ## it adds a suffix to the variables that stores the fig click event
-    ## The counter is used to later reset the filter callbacks
-    for q in ['type']:
-        if f"{q}_query" not in st.session_state:
-            st.session_state[f"{q}_query"] = set()
+@st.cache_data()
+def last_updated():
+    time = datetime.now().strftime("%b %d, %H:%M")
+    return time
 
-    if "counter" not in st.session_state:
-        st.session_state.counter = 0
+def reload_data():
+    with st.sidebar:
+        if st.button("Reload Data",type="primary",key='reload_data'):
+            load_data.clear()
+            load_data()
+            mess = last_updated()
+            st.write(f'Last updated on: {mess}')
 
-def reset_state_callback():
-    ## Resets all filters and increments counter in Streamlit Session State
-    st.session_state.counter = 1 + st.session_state.counter
-    for q in ['type']:
-        st.session_state[f"{q}_query"] = set()
+def tag_list(df):
+    ## Create a list of tags ordered by date
+    tags = df[['tag','date']]
+    tags.loc[:,'date'] = pd.to_datetime(tags['date'],dayfirst=True)
+    tags = tags.groupby('tag',as_index=False)['date'].max().sort_values(by='date',ascending=False)
+    tags = list(tags.tag)
+    return tags
 
-def query_data(df):
-    ## Apply filters in Streamlit Session State to filter the input DataFrame
-    df["selected"] = True
+def current_period(df,y,m,p,t):
+    df_current = df[(df['year'].isin(y)) & 
+                    (df['month'].isin(m)) &
+                    (df['paid_by'].isin(p)) &
+                    (df['tag'].isin(t))]  
+    return df_current
     
-    for q in ['type']:
-        if st.session_state[f"{q}_query"]:
-            df.loc[~df[q].isin(st.session_state[f"{q}_query"]), "selected"] = False
-
-    return df[df['selected']==True]
-
-@st.cache_data
-def time_frames(df):
-    ## Create current & past timeframes
-    today = datetime.now().date()
-    current_month = today.month
-    past_month = 12 if current_month == 1 else current_month - 1
-    current_year = today.year
-    past_year = current_year-1
-    past_month_year = int(current_year) -1 if current_month == 1 else current_year
-
-    df_current = df[(df['month'] == current_month) & (df['year'] == current_year)]
-    df_past = df[(df['month'] == past_month) & (df['year'] == past_month_year)]
+def past_period(df,y,m,p):
+    # there are 3 options:
+    # a. More then one year is selected
+    # b. Only one month is selected
+    # c. All the months in a year are selected
     
-    return df_current, df_past, current_month, past_month, past_month_year, current_year, past_year
+    if len(y) > 1:
+        df_past = "Please select only one year"
+    elif len(m) == 1:
+        past_month = 12 if m[0] == 1 else m[0] - 1
+        past_year = y[0] -1 if m[0] == 1 else y[0]
+        
+        df_past = df[(df['month'] == past_month) & 
+                     (df['year'] == past_year) & 
+                     (df['paid_by'].isin(p))
+                    ]
+    else:
+        past_year = y[0] -1
+        # Get list of current period months and applies it to past period
+        past_month = df[df['month'].isin(m)]['month'].unique().tolist()
+        
+        df_past = df[(df['month'].isin(past_month)) & 
+                     (df['year'] == past_year) & 
+                     (df['paid_by'].isin(p))
+                    ]
+    
+    return df_past
 
-def select_variables_and_filter(df):
-    ## Stores the input to later filter the df accordingly
-    year,month,person,r = st.columns([1,1,1,2])
+def select_variables(df):
+    ## Stores the inputs
+    year,month,person,tag,r = st.columns([1,1,1,1,2])
     
     selected_year = year.selectbox(
         'Select year:',
-        np.arange(datetime.now().year,2014,-1)
+        ['Select All',*np.arange(datetime.now().year,2014,-1)],
+        index=1
     )
     selected_month = month.selectbox(
         'Select month:',
-        np.arange(1,13,1),
-        index=datetime.now().month - 1
+       ['Select All',*range(1,13,1)],
+        index=(datetime.now().month)
     )
     selected_person = person.selectbox(
         'Select person:',
         ['Denise','Simone'],
         index=1
     )
-
+    tags = tag_list(df)
+    selected_tag = tag.selectbox(
+        'Select tag:',
+        tags,
+        index=0
+    )
+    # Series to if statement to factor in the "select all" option
+    if selected_year == 'Select All':
+        years = [*np.arange(datetime.now().year,2013,-1)]
+    else:
+        years = [selected_year]
+    #
+    if selected_month == 'Select All':
+        months = [*range(1,13,1)]
+    else:
+        months = [selected_month]
+    #
     if selected_person == 'Simone':
         person = ['s','sx','dx']
     else:
         person = ['d','dx','sx']
+    #   
+    if selected_tag == '':
+        tags_list = tag_list(df)
+    else:
+        tags_list = [selected_tag]
     
-    df_filtered = df[(df['year'] == selected_year) & 
-                     (df['month'] == selected_month) &
-                     (df['paid_by'].isin(person))]
-    return df_filtered
+    return years, months, person, tags_list
 
-def build_wat_fig(df):
-    ## Transform the df for the fig creation
-    df = df.groupby('type',as_index=False)['net'].sum()
-    df = df[df['type']!='Savings']
-    # Add total row
-    total_row = {
-        'type':'Final balance',
-        'net':df['net'].sum()
-    }
-    # Add new row to df
-    df_merged = pd.concat([
-        df,
-        pd.DataFrame([total_row])
-    ])
-    # Plot chart
-    wat_fig = px.bar(
-        df_merged,
-        x='type',
-        y='net',
-        color='type',
-        color_discrete_map={ #https://coolors.co/264653-2a9d8f-e9c46a-f4a261-e76f51
-            'Income':'#2A9D8F',
-            'Expenses':'#E76F51',
-            'Investing':'#F4A261',
-            'Final balance':'#264653'
-            },
-        text_auto=True,
-    )
-    wat_fig.update_layout(
-        showlegend=False,
-        xaxis_title=None,
-        yaxis_title=None,
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(0,0,0,0)',
-    )
-    return wat_fig
-
-def build_cat_fig(df):
-    df_current, df_past, current_month, past_month, past_month_year, current_year, past_year = time_frames(df)
+def period_card(df_current, df_past):
+    df_card_current = df_current.groupby('type',as_index=False)['net'].sum()
+    df_card_current['net'] = df_card_current['net'].abs()
     
-    df = df[(df['type'] != 'Income') & (df['type'] != 'Savings')]
-    df = df.groupby('cat',as_index=False)['net'].sum()
-    df['net'] = df['net'].abs()
-    df = df.sort_values('net',ascending=True)
+    df_card_past = df_past.groupby('type',as_index=False)['net'].sum()
+    df_card_past['net'] = df_card_past['net'].abs()
+    
+    df_card = df_card_current.merge(df_card_past,on='type',how='outer',suffixes=['_current','_past'])
+    df_card = df_card.fillna(0)
+    df_card['diff'] = df_card.net_current - df_card.net_past
+    
+    # Income exceptions    
+    try:
+        income = int(df_card.loc[df_card['type']=='Income']['net_current'].iloc[0])
+    except (ValueError, TypeError, IndexError):
+        income = 0
+    # Expenses exceptions 
+    try:
+        expenses = int(df_card.loc[df_card['type']=='Expenses']['net_current'].iloc[0])
+    except (ValueError, TypeError, IndexError):
+        expenses = 0
+    # Savings exceptions 
+    try:
+        savings = int(df_card.loc[df_card['type']=='Savings']['net_current'].iloc[0])
+    except (ValueError, TypeError, IndexError):
+        savings = 0
+    # Savings delta
+    try:
+        savings_delta = int(df_card.loc[df_card['type']=='Savings']['diff'].iloc[0])
+    except (ValueError, TypeError, IndexError):
+        savings_delta = 0
+    # Investing exceptions 
+    try:
+        investing = int(df_card.loc[df_card['type']=='Investing']['net_current'].iloc[0])
+    except (ValueError, TypeError, IndexError):
+        investing = 0
+    # Investing delta
+    try:
+        investing_delta = int(df_card.loc[df_card['type']=='Investing']['diff'].iloc[0])
+    except (ValueError, TypeError, IndexError):
+        investing_delta = 0
+    
+    col1,col2,col3,col4 = st.columns(4)
+    with col1:
+        st.metric(
+            label='Income',
+            value=millify(income,precision=1,drop_nulls=True),
+            delta=millify(
+                int(df_card.loc[df_card['type']=='Income']['diff'].iloc[0]),
+                precision=1,
+                drop_nulls=True)
+        )
+    with col3:  
+        st.metric(
+            label='Savings',
+            value=millify(savings,precision=1,drop_nulls=True),
+            delta=millify(savings_delta,precision=1,drop_nulls=True)
+        )
+    with col2:
+        st.metric(
+            label='Expenses',
+            value=millify(expenses,precision=1,drop_nulls=True),
+            delta=millify(
+                int(df_card.loc[df_card['type']=='Expenses']['diff'].iloc[0]),
+                precision=1,
+                drop_nulls=True)
+            )
+    with col4:
+        st.metric(
+            label='Investing',
+            value=millify(investing,precision=1,drop_nulls=True),
+            delta=millify(investing_delta,precision=1,drop_nulls=True)
+            )
+
+def build_cat_fig(df_current,df_past):
+    current_month = df_current.month_txt.min()
+    
+    df_current = df_current[(df_current['type'] != 'Income') & (df_current['type'] != 'Savings')]
+    df_current = df_current.groupby('cat',as_index=False)['net'].sum()
+    df_current['net'] = df_current['net'].abs() 
+    df_current = df_current.sort_values('net',ascending=True)
+    
+    df_past = df_past.groupby('cat',as_index=False)['net'].sum()
+    df_past['net'] = df_past['net'].abs()
+    
+    df = df_current.merge(df_past,
+                  how='left', 
+                  on='cat',
+                  suffixes=('_current','_past')
+                ).fillna(0)
+    df['diff'] = (df['net_current']-df['net_past'])
     
     cat_fig = px.bar(
         df,
-        x='net',
+        x='net_current',
         y='cat',
         orientation='h',
-        title='Expenses break-down',
+        title=f'Expenses break-down: {current_month}',
+        text='diff',
+        hover_name='cat',
+        hover_data={
+            'net_current':False,
+            'cat':False
+        },
         text_auto=True,
         labels={
-            'net':'Amount',
-            'cat':'Category'
+            'net_current':'Amount',
+            'cat':'Category',
+            'diff':'Diff vs prev period'
         },
         height=600,
-        # color='net'
     )
-    cat_fig.update_traces(
-        marker_color='#264653',
-        # textposition="outside",
-    )
+    
     cat_fig.update_layout(
         xaxis_tickprefix='kr ',
         xaxis_tickformat=',.0f',
-        yaxis_title=None
+        yaxis_title=None,
+        hoverlabel=dict(
+            bgcolor="#264653",
+        )
     )
+    cat_fig.update_traces(
+        marker_color='#264653'
+    )
+    
     return cat_fig
 
-def render_plotly_ui(df):
-    ## This function 'print' the fig & df and place them in the ui
-    ## Additionally collects the fig inputs and extract them into session state variables
-    wat_fig = build_wat_fig(df)
-    cat_fig = build_cat_fig(df)
+def build_sav_rate(df,df_main,p):
+    df['date'] = pd.to_datetime(df['date'],dayfirst=True)
+    df_main['date'] = pd.to_datetime(df_main['date'],dayfirst=True)
+    if (len(df.year.unique().tolist()) > 1) | (len(df.month.unique().tolist()) > 1):
+        min_date = df.date.min()
+        max_date = df.date.max()
+        df_filtered = df.loc[(df['date'] >= min_date) &
+                             (df['date'] <= max_date)]
+    else:
+        max_date = df.date.max()
+        min_date = (max_date - dt.timedelta(days=365)).replace(day=1)
+        df_filtered = df_main.loc[(df_main['date'] >= min_date) &
+                                  (df_main['date'] <= max_date) &
+                                  (df_main['paid_by'].isin(p))
+                                  ]
     
-    l,r = st.columns(2)
-    with l:
-        wat_fig_selected = plotly_events(
-        wat_fig,
-        click_event=True,
-        key=f'type_{st.session_state.counter}'
-        )
-        st.plotly_chart(cat_fig)
-        current_query = {}
-        current_query['type_query'] = {el['x'] for el in wat_fig_selected}
-    with r:
-        st.dataframe(
-            df[['date','net','description','cat','sub_type','type']],
-            hide_index=True,
-            # width=800
+    sav_rate = df_filtered[(df_filtered['cat'] != 'Savings') & (df_filtered['type'] != 'Investing')]
+    sav_rate = sav_rate.pivot_table(index=['year','month'],values='net',columns='type',aggfunc='sum',fill_value=0)
+    sav_rate['diff'] = sav_rate.Income - sav_rate.Expenses.apply(lambda x: abs(x))
+    sav_rate['diff_%'] = np.where(
+        sav_rate.Income == 0,
+        0,
+        np.where(
+            sav_rate.Expenses/sav_rate.Income < 0,
+            sav_rate.Expenses/sav_rate.Income + 1,
+            sav_rate.Expenses/sav_rate.Income - 1
             )
+    )  
+    
+    sav_rate = sav_rate.reset_index()
+    sav_rate['day'] = 1
+    sav_rate['date'] = pd.to_datetime(sav_rate[['year', 'month','day']])
+    average_perc = sav_rate['diff_%'].mean()
+    average = sav_rate['diff'].mean()
 
-    return current_query
+    sav_rate_fig = px.line(
+                        sav_rate,
+                        x='date',
+                        y='diff_%',
+                        line_shape='spline',
+                        markers=True,
+                        text='diff_%',
+                        custom_data='diff',
+                        labels={
+                            'diff':'Cash EoM'},
+                        hover_data={
+                            'date':False,
+                            'diff_%':False,
+                            'diff':True
+                        },
+                        title='Cash EoM',
+                        height=400,
+                    )
+    sav_rate_fig.update_xaxes(
+                        dtick="M1",
+                        tickformat="%b\n%Y"
+                    )
+    sav_rate_fig.update_traces(
+        line= dict(
+            color='#264653'
+        ),
+        texttemplate='%{text:.2f}%',
+        textposition="top center",
+        hovertemplate='Cash EoM:</b> %{customdata[0]:,.0f}kr<extra></extra>',
+    )
+    sav_rate_fig.update_layout(
+        xaxis_title=None,
+        yaxis_title='% of saving',
+        yaxis=dict(
+            showgrid=False,
+            )
+        )
+    sav_rate_fig.add_hline(
+        y=average_perc,
+        line_color= '#264653',
+        line_width=1,
+        line_dash='dot',
+        annotation_text=f'Period avg: {average:.1f}kr', 
+        annotation_position="bottom right",
+        annotation_font_size=10,
+        annotation_font_color="grey"
+        )
+    return sav_rate_fig
 
-def update_state(current_query: Dict[str, Set]):
-    ## The function is designed to manage and update the state of a Streamlit application based on incoming query parameters.
-    ## The function expects a dictionary where keys are strings and values are sets
-    rerun = False
-    for q in ['type']:
-        # Check whether the fig selection is different compared to the initial state
-        if current_query[f"{q}_query"] - st.session_state[f"{q}_query"]:
-            # Set the session state equal to the current fig selection
-            st.session_state[f"{q}_query"] = current_query[f"{q}_query"]
-            # Used to trigger a rerun
-            rerun = True
-    if rerun:
-        st.rerun() 
+def mean_monthly_values(df_main,y,m,p):
+    df = df_main[
+        (df_main['year'] == (pd.to_datetime(dt.date.today()).year-1)) &
+        (df_main['person'].isin(p))]
+    df = df.groupby(['month','cat'],as_index=False)['net'].sum()
+    df = df.groupby('cat',as_index=False).agg(
+        sum=('net','sum'),
+        mean=('net','mean'),
+        median=('net','median')
+    )
+    df['avg'] = df['sum']/12    
+    df['measure'] = df.median if (df['cat']=='Authorities') else 0
+    
+    return df
+
+def render_ui(df,y,m,p,t):
+    df_current = current_period(df,y,m,p,t)
+    df_past = past_period(df,y,m,p)
+    cat_fig = build_cat_fig(df_current,df_past)
+    sav_rate_fig = build_sav_rate(df_current,df,p)
+    x = mean_monthly_values(df,y,m,p)
+    
+    col1,col2 = st.columns(2)
+    with col1:
+        period_card(df_current,df_past)
+        st.dataframe(df_current[['date','net','description','cat','sub_type','type']],hide_index=True)
+    with col2:
+        st.plotly_chart(cat_fig)
+    sav_rate_fig 
+    x
+    return df_current, df_past
 
 def main():
     # This load and transform the data @cached
     df_main = load_data()
+    
+    # This reload the google sheet data
+    reload_data()
+    
     st.title('Monthly budget dashboard')
+    
     # This filter df based on widget inputs
-    df_filtered_period = select_variables_and_filter(df_main)
-    # Thanks to callbacks and session state this will update df according to fig selection
-    df_filtered = query_data(df_filtered_period)
-    # Place fig and df in the ui
-    current_query = render_plotly_ui(df_filtered)
-    # Update the session state according to fig selection and triggers rerun to feed the query_data function
-    update_state(current_query)
-    st.button("Reset filters", on_click=reset_state_callback)
+    years, months, person, tags_list = select_variables(df_main)
+    with st.expander('Click to expand'):
+        a,b,c,d = st.columns(4)
+        with a:
+            years, 
+        with b:
+            months,
+        with c:
+            person, 
+        with d:
+            tags_list
+    ##
+    df_current,df_past = render_ui(df_main, years, months, person, tags_list)    
 
 if __name__ == '__main__':
     st.set_page_config(layout='wide')
-    initialize_state()
     main()
-
-
-
-
-## fix selected timeframe and adjust it to return the timeframe based on the selection adn split the filtering
