@@ -60,8 +60,6 @@ def load_data():
     df_main['month_txt'] = df_main['date'].dt.strftime('%B')       
     df_main['date'] = df_main['date'].dt.strftime('%d-%m-%Y')
     
-
-    
     return df_main
 
 @st.cache_data()
@@ -89,7 +87,7 @@ def current_period(df,y,m,p,t):
     df_current = df[(df['year'].isin(y)) & 
                     (df['month'].isin(m)) &
                     (df['paid_by'].isin(p)) &
-                    (df['tag'].isin(t))]  
+                    (df['tag'].isin(t))] 
     return df_current
     
 def past_period(df,y,m,p):
@@ -99,7 +97,7 @@ def past_period(df,y,m,p):
     # c. All the months in a year are selected
     
     if len(y) > 1:
-        df_past = "Please select only one year"
+        df_past = df
     elif len(m) == 1:
         past_month = 12 if m[0] == 1 else m[0] - 1
         past_year = y[0] -1 if m[0] == 1 else y[0]
@@ -242,8 +240,19 @@ def period_card(df_current, df_past):
             delta=millify(investing_delta,precision=1,drop_nulls=True)
             )
 
-def build_cat_fig(df_current,df_past):
-    current_month = df_current.month_txt.min()
+def build_cat_fig(df_current,df_past,df_avg):
+    selected_month = df_current.month_txt.unique()
+    selected_year = df_current.year.unique()
+    # If statement to get dynamic title in chart with period
+    ################################################################## there is something wrong here
+    if len(selected_year) > 1 & len(selected_month) > 1:
+        current_period = f'{selected_year[0]} - {selected_year[-1]}'
+    elif len(selected_year) > 1 & len(selected_month) == 1:
+        current_period = f'{selected_month[0]}.{selected_year[0]} - {selected_month[0]}.{selected_year[-1]}'
+    elif len(selected_month) > 1:
+        current_period = f'{selected_month[0]} - {selected_month[-1]} ({selected_year[0]})'
+    else:
+        current_period = f'{selected_month[0]}.{selected_year[0]}'
     
     df_current = df_current[(df_current['type'] != 'Income') & (df_current['type'] != 'Savings')]
     df_current = df_current.groupby('cat',as_index=False)['net'].sum()
@@ -253,44 +262,51 @@ def build_cat_fig(df_current,df_past):
     df_past = df_past.groupby('cat',as_index=False)['net'].sum()
     df_past['net'] = df_past['net'].abs()
     
-    df = df_current.merge(df_past,
-                  how='left', 
-                  on='cat',
-                  suffixes=('_current','_past')
+    df = df_current.merge(
+                df_past,
+                how='left', 
+                on='cat',
+                suffixes=('_current','_past')
+                ).merge(
+                    df_avg,
+                    how='left',
+                    on='cat'
                 ).fillna(0)
+                
     df['diff'] = (df['net_current']-df['net_past'])
+    
+    chart_height = df.shape[0]*80
     
     cat_fig = px.bar(
         df,
-        x='net_current',
+        x=['average','net_current'],
         y='cat',
         orientation='h',
-        title=f'Expenses break-down: {current_month}',
+        title=f'Expenses break-down: {current_period}',
         text='diff',
         hover_name='cat',
-        hover_data={
-            'net_current':False,
-            'cat':False
-        },
+        # hover_data={
+        #     'net_current':False,
+        #     'cat':False
+        # },
         text_auto=True,
         labels={
             'net_current':'Amount',
             'cat':'Category',
             'diff':'Diff vs prev period'
         },
-        height=600,
-    )
-    
+        height=chart_height,
+        color_discrete_map={'net_current':'#264653','average':'#969696'}
+    )    
     cat_fig.update_layout(
         xaxis_tickprefix='kr ',
         xaxis_tickformat=',.0f',
         yaxis_title=None,
+        showlegend=False,
         hoverlabel=dict(
             bgcolor="#264653",
-        )
-    )
-    cat_fig.update_traces(
-        marker_color='#264653'
+        ),
+        barmode='group'
     )
     
     return cat_fig
@@ -298,6 +314,7 @@ def build_cat_fig(df_current,df_past):
 def build_sav_rate(df,df_main,p):
     df['date'] = pd.to_datetime(df['date'],dayfirst=True)
     df_main['date'] = pd.to_datetime(df_main['date'],dayfirst=True)
+    
     if (len(df.year.unique().tolist()) > 1) | (len(df.month.unique().tolist()) > 1):
         min_date = df.date.min()
         max_date = df.date.max()
@@ -315,15 +332,14 @@ def build_sav_rate(df,df_main,p):
     sav_rate = sav_rate.pivot_table(index=['year','month'],values='net',columns='type',aggfunc='sum',fill_value=0)
     sav_rate['diff'] = sav_rate.Income - sav_rate.Expenses.apply(lambda x: abs(x))
     sav_rate['diff_%'] = np.where(
-        sav_rate.Income == 0,
-        0,
-        np.where(
-            sav_rate.Expenses/sav_rate.Income < 0,
-            sav_rate.Expenses/sav_rate.Income + 1,
-            sav_rate.Expenses/sav_rate.Income - 1
-            )
-    )  
-    
+                                    sav_rate.Income == 0,
+                                    0,
+                                    np.where(
+                                        sav_rate.Expenses/sav_rate.Income < 0,
+                                        (sav_rate.Expenses/sav_rate.Income + 1)*100,
+                                        (sav_rate.Expenses/sav_rate.Income - 1)*100
+                                        )
+                                )    
     sav_rate = sav_rate.reset_index()
     sav_rate['day'] = 1
     sav_rate['date'] = pd.to_datetime(sav_rate[['year', 'month','day']])
@@ -347,6 +363,7 @@ def build_sav_rate(df,df_main,p):
                         },
                         title='Cash EoM',
                         height=400,
+                        width=600
                     )
     sav_rate_fig.update_xaxes(
                         dtick="M1",
@@ -356,7 +373,7 @@ def build_sav_rate(df,df_main,p):
         line= dict(
             color='#264653'
         ),
-        texttemplate='%{text:.2f}%',
+        texttemplate='%{text:.1f}%',
         textposition="top center",
         hovertemplate='Cash EoM:</b> %{customdata[0]:,.0f}kr<extra></extra>',
     )
@@ -372,45 +389,56 @@ def build_sav_rate(df,df_main,p):
         line_color= '#264653',
         line_width=1,
         line_dash='dot',
-        annotation_text=f'Period avg: {average:.1f}kr', 
+        annotation_text=f'12M avg: {average:.0f}kr', 
         annotation_position="bottom right",
         annotation_font_size=10,
         annotation_font_color="grey"
         )
     return sav_rate_fig
 
+def categorize_avg(row):
+    if row['cat'] in ['Authorities','Bar&cocktails','Car','Crypto','Entertainment','Furniture&home','Groceries','Hotels','Income','Misc','Present','Housing&bills']:
+        return row['median']
+    elif row['cat'] in ['Café&restaurant','Cloathing&Beauty','Flights','Health','Investing','Rent','SKAT','Salary','Savings','Sport','Subscriptions','Transportation']:
+        return row['mean']
+    else:
+        return 0
+
 def mean_monthly_values(df_main,y,m,p):
     df = df_main[
-        (df_main['year'] == (pd.to_datetime(dt.date.today()).year-1)) &
-        (df_main['person'].isin(p))]
+        (df_main['year'] == (pd.to_datetime(dt.date.today()).year-1)) & ##### if condition per considerare ultimi 6 mesi?
+        (df_main['person'].isin(p))
+        ]
     df = df.groupby(['month','cat'],as_index=False)['net'].sum()
     df = df.groupby('cat',as_index=False).agg(
         sum=('net','sum'),
         mean=('net','mean'),
         median=('net','median')
-    )
-    df['avg'] = df['sum']/12    
-    df['measure'] = df.median if (df['cat']=='Authorities') else 0
+    )    
+    df['average'] = df.apply(categorize_avg, axis=1).abs()
+    
+    df = df[['cat','average']]
     
     return df
 
 def render_ui(df,y,m,p,t):
     df_current = current_period(df,y,m,p,t)
     df_past = past_period(df,y,m,p)
-    cat_fig = build_cat_fig(df_current,df_past)
-    sav_rate_fig = build_sav_rate(df_current,df,p)
-    x = mean_monthly_values(df,y,m,p)
+    df_avg = mean_monthly_values(df,y,m,p)
+    cat_fig= build_cat_fig(df_current,df_past,df_avg)
+    sav_rate_fig = build_sav_rate(df_current,df,p)   
+    df_current['date'] = pd.to_datetime(df_current['date']).dt.strftime('%m/%d/%Y')
     
     col1,col2 = st.columns(2)
     with col1:
         period_card(df_current,df_past)
-        st.dataframe(df_current[['date','net','description','cat','sub_type','type']],hide_index=True)
+        with st.expander('Click to see transaction\'s list'):
+            st.dataframe(df_current[['date','net','description','cat','sub_type','type']],hide_index=True)
+
+        st.plotly_chart(sav_rate_fig,use_container_width=True)
     with col2:
         st.plotly_chart(cat_fig)
-    sav_rate_fig 
-    x
-    return df_current, df_past
-
+    
 def main():
     # This load and transform the data @cached
     df_main = load_data()
@@ -422,18 +450,18 @@ def main():
     
     # This filter df based on widget inputs
     years, months, person, tags_list = select_variables(df_main)
-    with st.expander('Click to expand'):
-        a,b,c,d = st.columns(4)
-        with a:
-            years, 
-        with b:
-            months,
-        with c:
-            person, 
-        with d:
-            tags_list
-    ##
-    df_current,df_past = render_ui(df_main, years, months, person, tags_list)    
+    # with st.expander('Click to expand'):
+    #     a,b,c,d = st.columns(4)
+    #     with a:
+    #         years, 
+    #     with b:
+    #         months,
+    #     with c:
+    #         person, 
+    #     with d:
+    #         tags_list
+    
+    render_ui(df_main, years, months, person, tags_list)    
 
 if __name__ == '__main__':
     st.set_page_config(layout='wide')
