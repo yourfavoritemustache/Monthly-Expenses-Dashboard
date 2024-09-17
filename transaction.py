@@ -241,6 +241,20 @@ def period_card(df_current, df_past):
             )
 
 def build_cat_fig(df_current,df_past,df_avg):
+    selected_month = df_current.month_txt.unique()
+    selected_year = df_current.year.unique()
+    # If statement to get dynamic title in chart with period
+    ##################################################################
+    if len(selected_year) > 1 and len(selected_month) > 1:
+        current_period = f'{selected_year[0]} - {selected_year[-1]}'
+    elif len(selected_year) > 1 and len(selected_month) == 1:
+        current_period = f'{selected_year[0]} - {selected_year[-1]} ({selected_month[0]} only)'
+    elif len(selected_month) > 1:
+        current_period = f'{selected_month[0]} - {selected_month[-1]} ({selected_year[0]})'
+    else:
+        current_period = f'{selected_month[0]}.{selected_year[0]}'
+    
+    
     df_current = df_current[(df_current['type'] != 'Income') & (df_current['type'] != 'Savings')]
     df_current = df_current.groupby('cat',as_index=False)['net'].sum()
     df_current['net'] = df_current['net'].abs() 
@@ -269,7 +283,7 @@ def build_cat_fig(df_current,df_past,df_avg):
         x=['average','net_current'],
         y='cat',
         orientation='h',
-        title=f'Expenses break-down: [add here the current period]',
+        title=f'Expenses break-down: {current_period}',
         text='diff',
         hover_name='cat',
         # hover_data={
@@ -322,7 +336,7 @@ def build_sav_rate(df,df_main,p):
     sav_rate = sav_rate.pivot_table(index=['year','month'],values='net',columns='type',aggfunc='sum',fill_value=0)
     sav_rate['diff'] = sav_rate.Income - sav_rate.Expenses.apply(lambda x: abs(x))
     sav_rate['diff_%'] = np.where(
-                                    sav_rate.Income == 0,
+                                    sav_rate.Income < 1000,
                                     0,
                                     np.where(
                                         sav_rate.Expenses/sav_rate.Income < 0,
