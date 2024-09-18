@@ -12,8 +12,17 @@ from streamlit_plotly_events import plotly_events
 from typing import Dict, Set
 from millify import millify
 
+def currency_button():
+    with st.sidebar:
+        selected_currency = st.selectbox(
+            'Select currency:',
+            ['DKK','EUR'],
+            index=0
+        )
+    return selected_currency
+
 @st.cache_data()
-def load_data():
+def load_data(currency):
     ## Load data & apply basics transformations
     # Google sheet API
     scopes = ["https://www.googleapis.com/auth/spreadsheets"]
@@ -30,14 +39,19 @@ def load_data():
     df_trans = pd.DataFrame(wks_trans.get_all_records())
     wks_cat = sh.worksheet('H_Categories')
     df_cat = pd.DataFrame(wks_cat.get_all_records())
+    wks_currency = sh.worksheet('Currency')
+    df_currency = pd.DataFrame(wks_currency.get_all_records())
+    
+    df_currency['dkk_eur'] = np.where(df_currency['dkk_eur'] == '#N/A',0.134,df_currency['dkk_eur'])
     df_cat = df_cat[['cat','sub_type','type']]
-    df_main = df_trans.merge(df_cat,how='left',on='cat')
+    df_main = df_trans.merge(df_cat,how='left',on='cat').merge(df_currency,how='left',on='date')
     
     # Remove empty dates
     df_main = df_main[df_main['date'] != '']
 
     # Convert to numeric
     df_main['gross'] = pd.to_numeric(df_main['gross'], errors = 'coerce').astype(int)
+    df_main['gross_eur'] = df_main['gross'] * df_main['dkk_eur']
 
     # Convert to date
     df_main['date'] = pd.to_datetime(df_main['date'],dayfirst=True)
@@ -49,6 +63,9 @@ def load_data():
 
     # Add net amount
     df_main['net'] = np.where(df_main['shared'] =='x', df_main['gross']/2,df_main['gross'])
+    
+    # Add EUR amount
+    df_main['net_eur'] = df_main['net'] * df_main['dkk_eur']
 
     # Add payed by
     df_main['paid_by'] = df_main['person'] + df_main['shared']
@@ -60,7 +77,15 @@ def load_data():
     df_main['month_txt'] = df_main['date'].dt.strftime('%B')       
     df_main['date'] = df_main['date'].dt.strftime('%d-%m-%Y')
     
-    return df_main
+    df_dkk = df_main.copy().drop(columns=['dkk_eur','net_eur','gross_eur'],axis=1)
+    df_eur = df_main.copy().drop(columns=['dkk_eur','net','gross'],axis=1).rename(columns={'net_eur':'net','gross_eur':'gross'})
+    
+    df_final = df_dkk.copy() if currency == 'DKK' else df_eur.copy()
+    # if currency == 'DKK':
+    #     df_final = df_dkk
+    # else:
+    #     df_eur#.copy()
+    return df_final
 
 @st.cache_data()
 def last_updated():
@@ -252,7 +277,7 @@ def build_cat_fig(df_current,df_past,df_avg):
     elif len(selected_month) > 1:
         current_period = f'{selected_month[0]} - {selected_month[-1]} ({selected_year[0]})'
     else:
-        current_period = f'{selected_month[0]}.{selected_year[0]}'
+        current_period = f'{selected_month[0]} {selected_year[0]}'
     
     
     df_current = df_current[(df_current['type'] != 'Income') & (df_current['type'] != 'Savings')]
@@ -444,8 +469,10 @@ def render_ui(df,y,m,p,t):
         st.plotly_chart(cat_fig)
     
 def main():
-    # This load and transform the data @cached
-    df_main = load_data()
+    currency = currency_button()
+    
+    # This load and transform the data @cached based on the currency
+    df_main = load_data(currency)
     
     # This reload the google sheet data
     reload_data()
