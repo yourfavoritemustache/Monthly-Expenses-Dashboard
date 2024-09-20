@@ -50,8 +50,8 @@ def load_data(currency):
     df_main = df_main[df_main['date'] != '']
 
     # Convert to numeric
-    df_main['gross'] = pd.to_numeric(df_main['gross'], errors = 'coerce').astype(int)
-    df_main['gross_eur'] = df_main['gross'] * df_main['dkk_eur']
+    df_main['gross'] = pd.to_numeric(df_main['gross'], errors = 'coerce').round(2).astype(float)
+    df_main['gross_eur'] = (df_main['gross'] * df_main['dkk_eur']).round(2).astype(float)
 
     # Convert to date
     df_main['date'] = pd.to_datetime(df_main['date'],dayfirst=True)
@@ -62,10 +62,10 @@ def load_data(currency):
     df_main[['person','shared','sas']] = df_main[['person','shared','sas']].apply(lambda x: x.astype(str).str.lower())
 
     # Add net amount
-    df_main['net'] = np.where(df_main['shared'] =='x', df_main['gross']/2,df_main['gross'])
+    df_main['net'] = np.where(df_main['shared'] =='x', df_main['gross']/2,df_main['gross']).round(2).astype(float)
     
     # Add EUR amount
-    df_main['net_eur'] = df_main['net'] * df_main['dkk_eur']
+    df_main['net_eur'] = (df_main['net'] * df_main['dkk_eur']).round(2).astype(float)
 
     # Add payed by
     df_main['paid_by'] = df_main['person'] + df_main['shared']
@@ -81,10 +81,6 @@ def load_data(currency):
     df_eur = df_main.copy().drop(columns=['dkk_eur','net','gross'],axis=1).rename(columns={'net_eur':'net','gross_eur':'gross'})
     
     df_final = df_dkk.copy() if currency == 'DKK' else df_eur.copy()
-    # if currency == 'DKK':
-    #     df_final = df_dkk
-    # else:
-    #     df_eur#.copy()
     return df_final
 
 @st.cache_data()
@@ -92,11 +88,11 @@ def last_updated():
     time = datetime.now().strftime("%b %d, %H:%M")
     return time
 
-def reload_data():
+def reload_data(currency):
     with st.sidebar:
         if st.button("Reload Data",type="primary",key='reload_data'):
             load_data.clear()
-            load_data()
+            load_data(currency)
             mess = last_updated()
             st.write(f'Last updated on: {mess}')
 
@@ -149,7 +145,7 @@ def select_variables(df):
     
     selected_year = year.selectbox(
         'Select year:',
-        ['Select All',*np.arange(datetime.now().year,2014,-1)],
+        ['Select All',*np.arange(datetime.now().year,2013,-1)],
         index=1
     )
     selected_month = month.selectbox(
@@ -191,7 +187,7 @@ def select_variables(df):
     
     return years, months, person, tags_list
 
-def period_card(df_current, df_past):
+def period_card(df_current, df_past, currency):
     df_card_current = df_current.groupby('type',as_index=False)['net'].sum()
     df_card_current['net'] = df_card_current['net'].abs()
     
@@ -236,7 +232,7 @@ def period_card(df_current, df_past):
     col1,col2,col3,col4 = st.columns(4)
     with col1:
         st.metric(
-            label='Income',
+            label=f'Income ({currency})',
             value=millify(income,precision=1,drop_nulls=True),
             delta=millify(
                 int(df_card.loc[df_card['type']=='Income']['diff'].iloc[0]),
@@ -245,13 +241,13 @@ def period_card(df_current, df_past):
         )
     with col3:  
         st.metric(
-            label='Savings',
+            label=f'Savings ({currency})',
             value=millify(savings,precision=1,drop_nulls=True),
             delta=millify(savings_delta,precision=1,drop_nulls=True)
         )
     with col2:
         st.metric(
-            label='Expenses',
+            label=f'Expenses ({currency})',
             value=millify(expenses,precision=1,drop_nulls=True),
             delta=millify(
                 int(df_card.loc[df_card['type']=='Expenses']['diff'].iloc[0]),
@@ -260,12 +256,12 @@ def period_card(df_current, df_past):
             )
     with col4:
         st.metric(
-            label='Investing',
+            label=f'Investing ({currency})',
             value=millify(investing,precision=1,drop_nulls=True),
             delta=millify(investing_delta,precision=1,drop_nulls=True)
             )
 
-def build_cat_fig(df_current,df_past,df_avg):
+def build_cat_fig(df_current,df_past,df_avg,currency):
     selected_month = df_current.month_txt.unique()
     selected_year = df_current.year.unique()
     # If statement to get dynamic title in chart with period
@@ -301,7 +297,7 @@ def build_cat_fig(df_current,df_past,df_avg):
                 
     df['diff'] = (df['net_current']-df['net_past'])
     
-    chart_height = df.shape[0]*80
+    chart_height = df.shape[0]*80 if df.shape[0]*80 > 500 else 500
     
     cat_fig = px.bar(
         df,
@@ -311,10 +307,6 @@ def build_cat_fig(df_current,df_past,df_avg):
         title=f'Expenses break-down: {current_period}',
         text='diff',
         hover_name='cat',
-        # hover_data={
-        #     'net_current':False,
-        #     'cat':False
-        # },
         text_auto=True,
         labels={
             'net_current':'Amount',
@@ -325,7 +317,7 @@ def build_cat_fig(df_current,df_past,df_avg):
         color_discrete_map={'net_current':'#264653','average':'#969696'}
     )    
     cat_fig.update_layout(
-        xaxis_tickprefix='kr ',
+        xaxis_tickprefix=f'{currency} ',
         xaxis_tickformat=',.0f',
         yaxis_title=None,
         showlegend=False,
@@ -335,12 +327,12 @@ def build_cat_fig(df_current,df_past,df_avg):
         barmode='group'
     )
     cat_fig.update_traces(
-        hovertemplate = '<i>Diff vs prev period<i>: kr %{text}<extra></extra>'
+        hovertemplate = '<i>Diff vs prev period<i>: %{text:0.2f}<extra></extra>'
     )
     
     return cat_fig
 
-def build_sav_rate(df,df_main,p):
+def build_sav_rate(df,df_main,p,currency):
     df['date'] = pd.to_datetime(df['date'],dayfirst=True)
     df_main['date'] = pd.to_datetime(df_main['date'],dayfirst=True)
     
@@ -404,7 +396,7 @@ def build_sav_rate(df,df_main,p):
         ),
         texttemplate='%{text:.1f}%',
         textposition="top center",
-        hovertemplate='Cash EoM:</b> %{customdata[0]:,.0f}kr<extra></extra>',
+        hovertemplate='Cash EoM:</b> %{customdata[0]:,.0f}<extra></extra>',
     )
     sav_rate_fig.update_layout(
         xaxis_title=None,
@@ -418,12 +410,68 @@ def build_sav_rate(df,df_main,p):
         line_color= '#264653',
         line_width=1,
         line_dash='dot',
-        annotation_text=f'12M avg: {average:.0f}kr', 
+        annotation_text=f'12M avg: {average:.0f}{currency}', 
         annotation_position="bottom right",
         annotation_font_size=10,
         annotation_font_color="grey"
         )
     return sav_rate_fig
+
+def build_net_worth(df_main,p,c):
+    # Filter correct person, exclude certain transactions and add cumulative sum day by day 
+    df_main['cumsum'] = df_main[
+        (df_main['person'].isin(p)) & 
+        (df_main['exclude_from_budget'] != 'x') & 
+        (df_main['type'] != 'Savings')
+        ]['net'].cumsum(axis=0)
+    
+    # Extract the unique dates at the EoM
+    dates = df_main.copy().groupby(['year','month'],as_index=False)['date'].max()['date'].tolist()
+    cumsum = df_main.copy().groupby('date',as_index=False)['cumsum'].last()
+    #Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. 
+    # Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)
+    pd.set_option('future.no_silent_downcasting', True)
+    cumsum = cumsum[cumsum['date'].isin(dates)].ffill().infer_objects(copy=False)
+    cumsum['cumsum_millify'] = cumsum['cumsum'].apply(lambda x: millify(x))
+    
+    net_worth_fig = px.area(
+        cumsum,
+        x='date',
+        y='cumsum',
+        text='cumsum_millify',
+        line_shape='spline',
+        labels={
+            'date':'Period',
+            'cumsum':'Rolling total'
+        },
+        markers=False,
+        height=350
+    )
+    net_worth_fig.update_layout(
+        xaxis_title=None,
+        yaxis_title=None,
+    )
+    net_worth_fig.update_traces(
+        connectgaps=True,
+        hovertemplate = '%{text}<br>%{x}<extra></extra>',
+        textfont=dict(color='rgba(0,0,0,0)'),
+        marker=dict(size=1),
+        line= dict(color='#34a853'),
+        fillcolor='rgba(52, 168, 83, 0.2)'
+    )
+    net_worth_fig.update_xaxes(
+        rangeslider_visible=False,
+        rangeselector=dict(
+            buttons=list([
+                dict(count=2, label="1m", step="month", stepmode="todate"),
+                dict(count=6, label="6m", step="month", stepmode="backward"),
+                dict(count=1, label="YTD", step="year", stepmode="todate"),
+                dict(count=1, label="1y", step="year", stepmode="backward"),
+                dict(label="Max",step="all")
+            ])
+        )
+    )   
+    return net_worth_fig
 
 def categorize_avg(row):
     if row['cat'] in ['Authorities','Bar&cocktails','Car','Crypto','Entertainment','Furniture&home','Groceries','Hotels','Income','Misc','Present','Housing&bills']:
@@ -450,17 +498,19 @@ def mean_monthly_values(df_main,y,m,p):
     
     return df
 
-def render_ui(df,y,m,p,t):
+def render_ui(df,y,m,p,t,currency):
     df_current = current_period(df,y,m,p,t)
     df_past = past_period(df,y,m,p)
     df_avg = mean_monthly_values(df,y,m,p)
-    cat_fig= build_cat_fig(df_current,df_past,df_avg)
-    sav_rate_fig = build_sav_rate(df_current,df,p)   
+    cat_fig= build_cat_fig(df_current,df_past,df_avg,currency)
+    sav_rate_fig = build_sav_rate(df_current,df,p,currency)
+    net_worth_fig = build_net_worth(df,p,currency)
     df_current['date'] = pd.to_datetime(df_current['date']).dt.strftime('%m/%d/%Y')
     
     col1,col2 = st.columns(2)
     with col1:
-        period_card(df_current,df_past)
+        period_card(df_current,df_past,currency)
+        st.plotly_chart(net_worth_fig,use_container_width=True)        
         with st.expander('Click to see transaction\'s list'):
             st.dataframe(df_current[['date','net','description','cat','sub_type','type']],hide_index=True)
 
@@ -470,16 +520,16 @@ def render_ui(df,y,m,p,t):
     
 def main():
     currency = currency_button()
-    
+    c = 'kr' if currency == 'DKK' else '€'
     # This load and transform the data @cached based on the currency
     df_main = load_data(currency)
     
     # This reload the google sheet data
-    reload_data()
+    reload_data(c)
     
     st.title('Monthly budget dashboard')
     
-    # This filter df based on widget inputs
+    # This return the parameters for later filtering
     years, months, person, tags_list = select_variables(df_main)
     # with st.expander('Click to expand'):
     #     a,b,c,d = st.columns(4)
@@ -492,7 +542,7 @@ def main():
     #     with d:
     #         tags_list
     
-    render_ui(df_main, years, months, person, tags_list)    
+    render_ui(df_main, years, months, person, tags_list, currency)    
 
 if __name__ == '__main__':
     st.set_page_config(layout='wide')
