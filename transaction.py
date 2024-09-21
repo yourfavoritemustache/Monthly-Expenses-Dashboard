@@ -4,13 +4,19 @@ import pandas as pd
 import numpy as np
 import datetime as dt
 import streamlit as st
+import streamlit_authenticator as stauth
 import plotly.express as px
+import yaml
+import time
+import os
 
 from google.oauth2.service_account import Credentials
 from datetime import datetime
 from streamlit_plotly_events import plotly_events
 from typing import Dict, Set
 from millify import millify
+from pathlib import Path
+from yaml.loader import SafeLoader
 
 def currency_button():
     with st.sidebar:
@@ -19,12 +25,65 @@ def currency_button():
             ['DKK','EUR'],
             index=0
         )
-    return selected_currency
+        c = 'kr' if selected_currency == 'DKK' else '€'
+    return c
+
+def hash_passwords(passwords):
+    ## Function to hash passwords
+    return stauth.Hasher(passwords).generate()
+
+def login():
+    # User credentials
+    names = ['Simone Astolfi', 'Denise Mengoli','Guest']
+    usernames = ['yourfavoritemustache', 'paperina','guest']
+    passwords = ['Quest@e!unapsw!', 'Quest@e!unapsw!','guest']  # In practice, use hashed passwords
+
+    # Hash passwords
+    hashed_passwords = hash_passwords(passwords)
+
+    # Create credentials dictionary
+    credentials = {
+        'usernames': {
+            usernames[0]: {'name': names[0], 'password': hashed_passwords[0]},
+            usernames[1]: {'name': names[1], 'password': hashed_passwords[1]},
+            usernames[2]: {'name': names[2], 'password': hashed_passwords[2]}
+        }
+    }
+    # Create authenticator object
+    authenticator = stauth.Authenticate(
+        credentials=credentials,
+        cookie_name='expenses_dashboard',
+        cookie_key = 'yourfavoritesignaturek3y',
+        cookie_expiry_days=1
+    )
+    # Implement login widget
+    name, authentication_status, username = authenticator.login('main', 'Login')
+    
+    return authenticator, name, authentication_status, username
+
+def load_example_data():
+    transactions = os.path.join(os.getcwd(), 'assets\\transactions_fictitious.csv')
+    categories = os.path.join(os.getcwd(), 'assets\\categories.csv')
+    currency = os.path.join(os.getcwd(), 'assets\\currency.csv')
+    df_transactions = pd.read_csv(transactions).fillna('')
+    df_categories = pd.read_csv(categories)
+    df_currency = pd.read_csv(currency)
+    df_transactions = df_transactions.head()
+    
+    return df_transactions,df_categories,df_currency
+
+def access_type(username,df_trans,df_cat,df_currency):
+    if username != 'guest':
+        df_trans,df_cat,df_currency = load_data()
+    else:
+        df_trans,df_cat,df_currency = load_example_data()
+    
+    return df_trans,df_cat,df_currency
 
 @st.cache_data()
-def load_data(currency):
-    ## Load data & apply basics transformations
-    # Google sheet API
+def load_data():
+    ## Load data
+    # Initialize Google sheet API call
     scopes = ["https://www.googleapis.com/auth/spreadsheets"]
     creds = Credentials.from_service_account_file('credentials.json', scopes=scopes)
     client = gspread.authorize(creds)
@@ -36,24 +95,29 @@ def load_data(currency):
 
     # Extract worksheets
     wks_trans = sh.worksheet('Transactions')
-    df_trans = pd.DataFrame(wks_trans.get_all_records())
     wks_cat = sh.worksheet('H_Categories')
-    df_cat = pd.DataFrame(wks_cat.get_all_records())
     wks_currency = sh.worksheet('Currency')
+    
+    df_trans = pd.DataFrame(wks_trans.get_all_records())
+    df_cat = pd.DataFrame(wks_cat.get_all_records())
     df_currency = pd.DataFrame(wks_currency.get_all_records())
     
-    df_currency['dkk_eur'] = np.where(df_currency['dkk_eur'] == '#N/A',0.134,df_currency['dkk_eur'])
+    return df_trans,df_cat,df_currency          
+
+@st.cache_data()
+def transform_data(df_trans,df_cat,df_currency):   
+    ## Transform data
+    df_main = df_trans.merge(df_cat,how='left',on='cat').merge(df_currency,how='left',on='date') 
+    # df_currency['dkk_eur'] = np.where(df_currency['dkk_eur'] == '#N/A',0.134,df_currency['dkk_eur'])
     df_cat = df_cat[['cat','sub_type','type']]
-    df_main = df_trans.merge(df_cat,how='left',on='cat').merge(df_currency,how='left',on='date')
     
     # Remove empty dates
     df_main = df_main[df_main['date'] != '']
 
     # Convert to numeric
     df_main['gross'] = pd.to_numeric(df_main['gross'], errors = 'coerce').round(2).astype(float)
-    df_main['gross_eur'] = (df_main['gross'] * df_main['dkk_eur']).round(2).astype(float)
 
-    # Convert to date
+    # # Convert to date
     df_main['date'] = pd.to_datetime(df_main['date'],dayfirst=True)
     # Filter out future transaction
     df_main = df_main[df_main['date'] <= pd.to_datetime(dt.date.today())]
@@ -66,6 +130,7 @@ def load_data(currency):
     
     # Add EUR amount
     df_main['net_eur'] = (df_main['net'] * df_main['dkk_eur']).round(2).astype(float)
+    df_main['gross_eur'] = (df_main['gross'] * df_main['dkk_eur']).round(2).astype(float)
 
     # Add payed by
     df_main['paid_by'] = df_main['person'] + df_main['shared']
@@ -80,19 +145,18 @@ def load_data(currency):
     df_dkk = df_main.copy().drop(columns=['dkk_eur','net_eur','gross_eur'],axis=1)
     df_eur = df_main.copy().drop(columns=['dkk_eur','net','gross'],axis=1).rename(columns={'net_eur':'net','gross_eur':'gross'})
     
-    df_final = df_dkk.copy() if currency == 'DKK' else df_eur.copy()
-    return df_final
+    return df_dkk, df_eur
 
 @st.cache_data()
 def last_updated():
     time = datetime.now().strftime("%b %d, %H:%M")
     return time
 
-def reload_data(currency):
+def reload_data():
     with st.sidebar:
         if st.button("Reload Data",type="primary",key='reload_data'):
             load_data.clear()
-            load_data(currency)
+            load_data()
             mess = last_updated()
             st.write(f'Last updated on: {mess}')
 
@@ -518,32 +582,43 @@ def render_ui(df,y,m,p,t,currency):
     with col2:
         st.plotly_chart(cat_fig)
     
-def main():
+def main(username):
     currency = currency_button()
-    c = 'kr' if currency == 'DKK' else '€'
-    # This load and transform the data @cached based on the currency
-    df_main = load_data(currency)
+    df_trans,df_cat,df_currency = load_data()
+    df_trans,df_cat,df_currency = access_type(username,df_trans,df_cat,df_currency)
+    df_dkk, df_eur = transform_data(df_trans,df_cat,df_currency)
     
-    # This reload the google sheet data
-    reload_data(c)
+    df_main = df_dkk.copy() if currency == 'kr' else df_eur.copy()
     
+    reload_data() # This reload the google sheet data
     st.title('Monthly budget dashboard')
-    
+
     # This return the parameters for later filtering
     years, months, person, tags_list = select_variables(df_main)
-    # with st.expander('Click to expand'):
-    #     a,b,c,d = st.columns(4)
-    #     with a:
-    #         years, 
-    #     with b:
-    #         months,
-    #     with c:
-    #         person, 
-    #     with d:
-    #         tags_list
+    # # with st.expander('Click to expand'):
+    # #     a,b,c,d = st.columns(4)
+    # #     with a:
+    # #         years, 
+    # #     with b:
+    # #         months,
+    # #     with c:
+    # #         person, 
+    # #     with d:
+    # #         tags_list
     
     render_ui(df_main, years, months, person, tags_list, currency)    
 
 if __name__ == '__main__':
     st.set_page_config(layout='wide')
-    main()
+    authenticator, name, authentication_status, username = login()
+    access_level = username
+    # Handle authentication status
+    if authentication_status:
+        main(username)
+        # if st.sidebar.button('Logout'):
+            # authenticator.logout('main')
+            # st.experimental_rerun()
+    elif authentication_status == False:
+        st.error('Username or password is incorrect')
+    elif authentication_status == None:
+        st.warning('Please enter your username and password')
