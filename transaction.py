@@ -6,8 +6,6 @@ import datetime as dt
 import streamlit as st
 import streamlit_authenticator as stauth
 import plotly.express as px
-import yaml
-import time
 import os
 
 from google.oauth2.service_account import Credentials
@@ -68,13 +66,12 @@ def load_example_data():
     df_transactions = pd.read_csv(transactions).fillna('')
     df_categories = pd.read_csv(categories)
     df_currency = pd.read_csv(currency)
-    df_transactions = df_transactions.head()
-    
+
     return df_transactions,df_categories,df_currency
 
 def access_type(username,df_trans,df_cat,df_currency):
     if username != 'guest':
-        df_trans,df_cat,df_currency = load_data()
+        df_trans,df_cat,df_currency,time = load_data()
     else:
         df_trans,df_cat,df_currency = load_example_data()
     
@@ -91,7 +88,7 @@ def load_data():
     # Connect to google sheet
     sheet_id = "1MwslTvC_v5DHJuXnglELvWNnc7JrE65oP1_uVTaslb4"
     sh = client.open_by_key(sheet_id)
-    values_list = sh.get_worksheet(0)
+    # values_list = sh.get_worksheet(0)
 
     # Extract worksheets
     wks_trans = sh.worksheet('Transactions')
@@ -102,7 +99,9 @@ def load_data():
     df_cat = pd.DataFrame(wks_cat.get_all_records())
     df_currency = pd.DataFrame(wks_currency.get_all_records())
     
-    return df_trans,df_cat,df_currency          
+    time = datetime.now().strftime("%b %d, %H:%M")
+    
+    return df_trans,df_cat,df_currency,time          
 
 @st.cache_data()
 def transform_data(df_trans,df_cat,df_currency):   
@@ -147,18 +146,11 @@ def transform_data(df_trans,df_cat,df_currency):
     
     return df_dkk, df_eur
 
-@st.cache_data()
-def last_updated():
-    time = datetime.now().strftime("%b %d, %H:%M")
-    return time
-
 def reload_data():
     with st.sidebar:
         if st.button("Reload Data",type="primary",key='reload_data'):
             load_data.clear()
             load_data()
-            mess = last_updated()
-            st.write(f'Last updated on: {mess}')
 
 def tag_list(df):
     ## Create a list of tags ordered by date
@@ -584,7 +576,7 @@ def render_ui(df,y,m,p,t,currency):
     
 def main(username):
     currency = currency_button()
-    df_trans,df_cat,df_currency = load_data()
+    df_trans,df_cat,df_currency,time = load_data()    
     df_trans,df_cat,df_currency = access_type(username,df_trans,df_cat,df_currency)
     df_dkk, df_eur = transform_data(df_trans,df_cat,df_currency)
     
@@ -592,6 +584,8 @@ def main(username):
     
     reload_data() # This reload the google sheet data
     st.title('Monthly budget dashboard')
+    with st.sidebar:
+        st.write(f'Last updated: {time}')
 
     # This return the parameters for later filtering
     years, months, person, tags_list = select_variables(df_main)
@@ -616,9 +610,10 @@ if __name__ == '__main__':
     if authentication_status:
         main(username)
         # if st.sidebar.button('Logout'):
-            # authenticator.logout('main')
-            # st.experimental_rerun()
+        #     authenticator.logout('main')
+        #     st.experimental_rerun()
     elif authentication_status == False:
         st.error('Username or password is incorrect')
     elif authentication_status == None:
         st.warning('Please enter your username and password')
+        
