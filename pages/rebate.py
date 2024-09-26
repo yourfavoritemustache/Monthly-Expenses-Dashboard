@@ -171,7 +171,7 @@ def rebate_metric(selected_year,selected_month):
 ##################################################################
 
 st.title('Monthly rebate')
-df_main = load_data()
+df_main = load_transform_data()
 df_current, df_past, current_month, past_month, past_month_year, current_year, past_year = time_frames(df_main)
 # Calculate month range from current month
 selected_year,selected_month = rebate_choose_period()
