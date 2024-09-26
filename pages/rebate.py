@@ -14,9 +14,10 @@ import streamlit as st
 def load_transform_data():
     ## Load data and transform data
     # Initialize Google sheet API call
-    scopes = ["https://www.googleapis.com/auth/spreadsheets"]
+    # scope = ["https://www.googleapis.com/auth/spreadsheets"]
+    scope = ['https://spreadsheets.google.com/feeds','https://www.googleapis.com/auth/drive']
     
-    creds = Credentials.from_service_account_info('Google_API_Credentials', scopes=scopes)
+    creds = Credentials.from_service_account_info('Google_API_Credentials', scopes=scope)
     client = gspread.authorize(creds)
 
     # Connect to google sheet
