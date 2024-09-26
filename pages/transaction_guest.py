@@ -4,17 +4,12 @@ import pandas as pd
 import numpy as np
 import datetime as dt
 import streamlit as st
-import streamlit_authenticator as stauth
 import plotly.express as px
 import os
 
 from google.oauth2.service_account import Credentials
 from datetime import datetime
-from streamlit_plotly_events import plotly_events
-from typing import Dict, Set
 from millify import millify
-from pathlib import Path
-from yaml.loader import SafeLoader
 
 def currency_button():
     with st.sidebar:
