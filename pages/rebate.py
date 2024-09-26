@@ -8,15 +8,6 @@ import matplotlib as plt
 import streamlit as st
 
 ##################################################################
-### Configure App
-##################################################################
-st.set_page_config(
-    layout='wide',
-    # initial_sidebar_state = 'collapsed',
-    page_title='Monthly rebate',
-    # page_icon=':material/currency_exchange',
-)
-##################################################################
 ### Data
 ##################################################################
 @st.cache_data()
