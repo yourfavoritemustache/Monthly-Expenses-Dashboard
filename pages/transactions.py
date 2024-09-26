@@ -525,9 +525,6 @@ def main():
     # This return the parameters for later filtering
     years, months, person, tags_list = select_variables(df_main)
     
-    render_ui(df_main, years, months, person, tags_list, currency)    
+    render_ui(df_main, years, months, person, tags_list, currency)
 
-if __name__ == '__main__':
-    st.set_page_config(layout='wide')
-    main()
-        
+main()
