@@ -258,6 +258,7 @@ def period_card(df_current, df_past, currency):
 def build_cat_fig(df_current,df_past,df_avg,currency):
     selected_month = df_current.month_txt.unique()
     selected_year = df_current.year.unique()
+    
     # If statement to get dynamic title in chart with period
     ##################################################################
     if len(selected_year) > 1 and len(selected_month) > 1:
@@ -318,7 +319,8 @@ def build_cat_fig(df_current,df_past,df_avg,currency):
         hoverlabel=dict(
             bgcolor="#264653",
         ),
-        barmode='group'
+        barmode='group',
+        config=dict(displayModeBar=False)
     )
     cat_fig.update_traces(
         hovertemplate = '<i>Diff vs prev period<i>: %{text:0.2f}<extra></extra>'
