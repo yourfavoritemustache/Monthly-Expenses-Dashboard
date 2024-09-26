@@ -10,18 +10,18 @@ def pag_layout(username,authentication_status):
     rebate = st.Page(
         "pages/rebate.py",
         title="Rebate",
-        icon=":material/person_add:",
+        icon=":material/currency_exchange:",
     )
     dashboard = st.Page(
         "pages/transactions.py",
         title="Transactions",
-        icon=":material/person_add:",
+        icon=":material/analytics:",
         default=True
     )
     welcome = st.Page(
         "pages/welcome.py",
         title="Welcome",
-        icon=":material/person_add:",
+        icon=":material/home:",
     )
 
     private_pages = [dashboard,rebate]
