@@ -75,7 +75,12 @@ def login():
     return authenticator, name, authentication_status, username
 
 if __name__ == '__main__':
-    st.set_page_config(layout='wide',initial_sidebar_state='collapsed')
+    st.set_page_config(
+        layout='wide',
+        initial_sidebar_state='collapsed',
+        page_icon='💰',
+        page_title='Money dashboard'
+        )
     authenticator, name, authentication_status, username = login()
     # Handle authentication status
     if authentication_status == None:
