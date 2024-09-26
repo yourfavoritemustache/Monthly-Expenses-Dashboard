@@ -48,8 +48,8 @@ def hash_passwords(passwords):
 def login():
     # User credentials
     names = ['Astengoli', 'Guest']
-    usernames = st.secrets['usernames']
-    passwords = st.secrets['passwords']
+    usernames = st.secrets.auth.usernames
+    passwords = st.secrets.auth.passwords
     
     # Hash passwords
     hashed_passwords = hash_passwords(passwords)
