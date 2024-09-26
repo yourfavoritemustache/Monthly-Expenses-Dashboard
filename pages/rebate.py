@@ -28,7 +28,7 @@ def load_transform_data():
         "client_x509_cert_url": st.secrets['client_x509_cert_url'],
         "universe_domain": st.secrets['universe_domain']
     }
-    creds = Credentials.from_service_account_file(credentials, scopes=scopes)
+    creds = Credentials.from_service_account_info(credentials, scopes=scopes)
     client = gspread.authorize(creds)
 
     # Connect to google sheet
