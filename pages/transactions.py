@@ -521,10 +521,8 @@ def main():
     st.title('Monthly budget dashboard')
     with st.sidebar:
         st.write(f'Last updated: {time}')
-
     # This return the parameters for later filtering
     years, months, person, tags_list = select_variables(df_main)
-    
     render_ui(df_main, years, months, person, tags_list, currency)
 
 main()

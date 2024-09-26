@@ -11,7 +11,7 @@ def load_transform_data():
     ## Load data and transform data
     # Initialize Google sheet API call
     scope = ['https://spreadsheets.google.com/feeds','https://www.googleapis.com/auth/drive']
-    
+
     creds = Credentials.from_service_account_info(st.secrets['Google_API_Credentials'], scopes=scope)
     client = gspread.authorize(creds)
 
