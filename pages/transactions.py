@@ -26,11 +26,24 @@ def load_transform_data():
     ## Load data and transform data
     # Initialize Google sheet API call
     scopes = ["https://www.googleapis.com/auth/spreadsheets"]
-    creds = Credentials.from_service_account_file('credentials.json', scopes=scopes)
+    credentials = {
+        "type": st.secrets['type'],
+        "project_id": st.secrets['project_id'],
+        "private_key_id": st.secrets['private_key_id'],
+        "private_key": st.secrets['private_key'],
+        "client_email": st.secrets['client_email'],
+        "client_id": st.secrets['client_id'],
+        "auth_uri": st.secrets['auth_uri'],
+        "token_uri": st.secrets['token_uri'],
+        "auth_provider_x509_cert_url": st.secrets['auth_provider_x509_cert_url'],
+        "client_x509_cert_url": st.secrets['client_x509_cert_url'],
+        "universe_domain": st.secrets['universe_domain']
+    }
+    creds = Credentials.from_service_account_file(credentials, scopes=scopes)
     client = gspread.authorize(creds)
 
     # Connect to google sheet
-    sheet_id = "1MwslTvC_v5DHJuXnglELvWNnc7JrE65oP1_uVTaslb4"
+    sheet_id = st.secrets['sheet_id']
     sh = client.open_by_key(sheet_id)
     # values_list = sh.get_worksheet(0)
 
@@ -47,7 +60,7 @@ def load_transform_data():
       
     ## Transform data
     df_main = df_trans.merge(df_cat,how='left',on='cat').merge(df_currency,how='left',on='date') 
-    # df_currency['dkk_eur'] = np.where(df_currency['dkk_eur'] == '#N/A',0.134,df_currency['dkk_eur'])
+    df_currency['dkk_eur'] = np.where(df_currency['dkk_eur'] == '#N/A',0.134,df_currency['dkk_eur'])
     df_cat = df_cat[['cat','sub_type','type']]
     
     # Remove empty dates
