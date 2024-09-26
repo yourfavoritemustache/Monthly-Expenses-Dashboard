@@ -16,6 +16,7 @@ def pag_layout(username,authentication_status):
         "pages/transactions.py",
         title="Transactions",
         icon=":material/person_add:",
+        default=True
     )
     welcome = st.Page(
         "pages/welcome.py",
@@ -23,7 +24,7 @@ def pag_layout(username,authentication_status):
         icon=":material/person_add:",
     )
 
-    private_pages = [rebate, dashboard]
+    private_pages = [dashboard,rebate]
     guest_pages = [guest_dashboard]
     public_pages = [welcome]
 
@@ -74,7 +75,7 @@ def login():
     return authenticator, name, authentication_status, username
 
 if __name__ == '__main__':
-    st.set_page_config(layout='wide')
+    st.set_page_config(layout='wide',initial_sidebar_state='collapsed')
     authenticator, name, authentication_status, username = login()
     # Handle authentication status
     if authentication_status == None:
