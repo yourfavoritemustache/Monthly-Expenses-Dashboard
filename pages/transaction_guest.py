@@ -1,5 +1,3 @@
-
-import gspread
 import pandas as pd
 import numpy as np
 import datetime as dt
@@ -7,7 +5,6 @@ import streamlit as st
 import plotly.express as px
 import os
 
-from google.oauth2.service_account import Credentials
 from datetime import datetime
 from millify import millify
 
@@ -24,9 +21,9 @@ def currency_button():
 @st.cache_data()
 def load_transform_data():
     ## Load data
-    transactions = os.path.join(os.getcwd(), 'assets\\transactions_fictitious.csv')
-    categories = os.path.join(os.getcwd(), 'assets\\categories.csv')
-    currency = os.path.join(os.getcwd(), 'assets\\currency.csv')
+    transactions = os.path.join(os.getcwd(), 'assets/transactions_fictitious.csv')
+    categories = os.path.join(os.getcwd(), 'assets/categories.csv')
+    currency = os.path.join(os.getcwd(), 'assets/currency.csv')
     df_trans = pd.read_csv(transactions).fillna('')
     df_cat = pd.read_csv(categories)
     df_currency = pd.read_csv(currency)
@@ -35,7 +32,7 @@ def load_transform_data():
       
     ## Transform data
     df_main = df_trans.merge(df_cat,how='left',on='cat').merge(df_currency,how='left',on='date') 
-    # df_currency['dkk_eur'] = np.where(df_currency['dkk_eur'] == '#N/A',0.134,df_currency['dkk_eur'])
+    df_currency['dkk_eur'] = np.where(df_currency['dkk_eur'] == '#N/A',0.134,df_currency['dkk_eur'])
     df_cat = df_cat[['cat','sub_type','type']]
     
     # Remove empty dates
