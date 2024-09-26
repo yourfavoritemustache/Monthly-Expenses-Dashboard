@@ -4,17 +4,12 @@ import pandas as pd
 import numpy as np
 import datetime as dt
 from datetime import datetime
-import matplotlib as plt
 import streamlit as st
 
-##################################################################
-### Data
-##################################################################
 @st.cache_data()
 def load_transform_data():
     ## Load data and transform data
     # Initialize Google sheet API call
-    # scope = ["https://www.googleapis.com/auth/spreadsheets"]
     scope = ['https://spreadsheets.google.com/feeds','https://www.googleapis.com/auth/drive']
     
     creds = Credentials.from_service_account_info(st.secrets['Google_API_Credentials'], scopes=scope)
@@ -28,17 +23,14 @@ def load_transform_data():
     # Extract worksheets
     wks_trans = sh.worksheet('Transactions')
     wks_cat = sh.worksheet('H_Categories')
-    wks_currency = sh.worksheet('Currency')
     
     df_trans = pd.DataFrame(wks_trans.get_all_records())
     df_cat = pd.DataFrame(wks_cat.get_all_records())
-    df_currency = pd.DataFrame(wks_currency.get_all_records())
     
     time = datetime.now().strftime("%b %d, %H:%M")
       
-    ## Transform data
-    df_main = df_trans.merge(df_cat,how='left',on='cat').merge(df_currency,how='left',on='date') 
-    df_currency['dkk_eur'] = np.where(df_currency['dkk_eur'] == '#N/A',0.134,df_currency['dkk_eur'])
+    # Transform data
+    df_main = df_trans.merge(df_cat,how='left',on='cat')
     df_cat = df_cat[['cat','sub_type','type']]
     
     # Remove empty dates
@@ -57,10 +49,6 @@ def load_transform_data():
 
     # Add net amount
     df_main['net'] = np.where(df_main['shared'] =='x', df_main['gross']/2,df_main['gross']).round(2).astype(float)
-    
-    # Add EUR amount
-    df_main['net_eur'] = (df_main['net'] * df_main['dkk_eur']).round(2).astype(float)
-    df_main['gross_eur'] = (df_main['gross'] * df_main['dkk_eur']).round(2).astype(float)
 
     # Add payed by
     df_main['paid_by'] = df_main['person'] + df_main['shared']
@@ -72,10 +60,7 @@ def load_transform_data():
     df_main['month_txt'] = df_main['date'].dt.strftime('%B')       
     df_main['date'] = df_main['date'].dt.strftime('%d-%m-%Y')
     
-    df_dkk = df_main.copy().drop(columns=['dkk_eur','net_eur','gross_eur'],axis=1)
-    df_eur = df_main.copy().drop(columns=['dkk_eur','net','gross'],axis=1).rename(columns={'net_eur':'net','gross_eur':'gross'})
-    
-    return df_dkk, df_eur, time
+    return df_main, time
 
 @st.cache_data
 def time_frames(df_main):
@@ -86,14 +71,11 @@ def time_frames(df_main):
     past_year = current_year-1
     past_month_year = int(current_year) -1 if current_month == 1 else current_year
 
-    df_current = df_main[(df_main['month'] == current_month) & (df_main['year'] == current_year)]
+    df_current = df_main[(df_main['month'] == int(current_month)) & (df_main['year'] == int(current_year))]
     df_past = df_main[(df_main['month'] == past_month) & (df_main['year'] == past_month_year)]
     
     return df_current, df_past, current_month, past_month, past_month_year, current_year, past_year
 
-##################################################################
-### App Widgets
-##################################################################
 def rebate_choose_period():
     left_widget,right_widget, r = st.columns([1,1,2])
     
@@ -131,36 +113,32 @@ def rebate_metric(selected_year,selected_month):
         with metric_left:
             st.metric(
                 label='Total spent',
-                value=f'{shared_exp_current} kr'
+                value=f'{shared_exp_current:.2f} kr'
             )
             st.metric(
                 label='Denise paid',
-                value=f'{shared_exp_current_d} kr'
+                value=f'{shared_exp_current_d:.2f} kr'
             )
             st.metric(
                 label='Simone exp with Denise card',
-                value=f'{simone_exp_current_card} kr'
+                value=f'{simone_exp_current_card:.2f} kr'
             )
         with metric_right:
             st.metric(
                 label='Personal share',
-                value=f'{(shared_exp_current / 2).astype(int)} kr'
+                value=f'{(shared_exp_current / 2):.2f} kr'
             )
             st.metric(
                 label='Simone paid',
-                value=f'{shared_exp_current_s} kr'
+                value=f'{shared_exp_current_s:.2f} kr'
             )
             st.metric(
                 label='Simone owes',
-                value=f'{shared_balance.astype(int)} kr'
+                value=f'{shared_balance:.2f} kr'
             )
-    
-##################################################################
-### Main App
-##################################################################
 
 st.title('Monthly rebate')
-df_main = load_transform_data()
+df_main, time= load_transform_data()
 df_current, df_past, current_month, past_month, past_month_year, current_year, past_year = time_frames(df_main)
 # Calculate month range from current month
 selected_year,selected_month = rebate_choose_period()
