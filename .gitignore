@@ -1,10 +1,6 @@
-/transaction_sample.csv
-/transaction.ipynb
 /credentials.json
-/app.pyxx
 /.streamlit
-/pages
+/.vscode
+/old-support
 /dashboard.py
-/test.ipynb
-/transaction_old.py
 /assets
