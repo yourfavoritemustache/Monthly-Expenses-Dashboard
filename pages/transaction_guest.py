@@ -136,8 +136,8 @@ def select_variables(df):
     )
     selected_person = person.selectbox(
         'Select person:',
-        ['Denise','Simone'],
-        index=1
+        ['Simone'],
+        index=0
     )
     tags = tag_list(df)
     selected_tag = tag.selectbox(
