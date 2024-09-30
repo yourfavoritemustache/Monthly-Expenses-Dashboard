@@ -315,19 +315,10 @@ def build_cat_fig(df_current,df_past,df_avg,currency):
         xaxis_tickprefix=f'{currency} ',
         xaxis_tickformat=',.0f',
         yaxis_title=None,
-        showlegend=True,
-        legend=dict(
-            orientation='h',
-            xref='paper',
-            yref='container',
-            y=0.9,
-            x=0,
-            title=None,
-            bgcolor=None),
+        showlegend=False,
         hoverlabel=dict(
             bgcolor="#264653"),
         barmode='group',
-        margin=dict(l=1, r=1, t=0, b=0)
     )
     cat_fig.update_traces(
         name='Current period amount',
