@@ -27,8 +27,6 @@ def load_transform_data():
     df_trans = pd.read_csv(transactions).fillna('')
     df_cat = pd.read_csv(categories)
     df_currency = pd.read_csv(currency)
-    
-    time = datetime.now().strftime("%b %d, %H:%M")
       
     ## Transform data
     df_main = df_trans.merge(df_cat,how='left',on='cat').merge(df_currency,how='left',on='date') 
@@ -69,30 +67,15 @@ def load_transform_data():
     df_dkk = df_main.copy().drop(columns=['dkk_eur','net_eur','gross_eur'],axis=1)
     df_eur = df_main.copy().drop(columns=['dkk_eur','net','gross'],axis=1).rename(columns={'net_eur':'net','gross_eur':'gross'})
     
-    return df_dkk, df_eur, time
+    return df_dkk, df_eur
 
-def reload_data():
-    with st.sidebar:
-        if st.button("Reload Data",type="primary",key='reload_data'):
-            load_transform_data.clear()
-            load_transform_data()
-
-def tag_list(df):
-    ## Create a list of tags ordered by date
-    tags = df[['tag','date']]
-    tags.loc[:,'date'] = pd.to_datetime(tags['date'],dayfirst=True)
-    tags = tags.groupby('tag',as_index=False)['date'].max().sort_values(by='date',ascending=False)
-    tags = list(tags.tag)
-    return tags
-
-def current_period(df,y,m,p,t):
+def current_period(df,y,m):
     df_current = df[(df['year'].isin(y)) & 
-                    (df['month'].isin(m)) &
-                    (df['paid_by'].isin(p)) &
-                    (df['tag'].isin(t))] 
+                    (df['month'].isin(m))
+                    ] 
     return df_current
     
-def past_period(df,y,m,p):
+def past_period(df,y,m):
     # there are 3 options:
     # a. More then one year is selected
     # b. Only one month is selected
@@ -105,8 +88,7 @@ def past_period(df,y,m,p):
         past_year = y[0] -1 if m[0] == 1 else y[0]
         
         df_past = df[(df['month'] == past_month) & 
-                     (df['year'] == past_year) & 
-                     (df['paid_by'].isin(p))
+                     (df['year'] == past_year)
                     ]
     else:
         past_year = y[0] -1
@@ -114,15 +96,14 @@ def past_period(df,y,m,p):
         past_month = df[df['month'].isin(m)]['month'].unique().tolist()
         
         df_past = df[(df['month'].isin(past_month)) & 
-                     (df['year'] == past_year) & 
-                     (df['paid_by'].isin(p))
+                     (df['year'] == past_year)
                     ]
     
     return df_past
 
 def select_variables(df):
     ## Stores the inputs
-    year,month,person,tag,r = st.columns([1,1,1,1,2])
+    year,month,_,_,_ = st.columns([1,1,1,1,2])
     
     selected_year = year.selectbox(
         'Select year:',
@@ -134,17 +115,6 @@ def select_variables(df):
        ['Select All',*range(1,13,1)],
         index=(datetime.now().month)
     )
-    selected_person = person.selectbox(
-        'Select person:',
-        ['Simone'],
-        index=0
-    )
-    tags = tag_list(df)
-    selected_tag = tag.selectbox(
-        'Select tag:',
-        tags,
-        index=0
-    )
     # Series to if statement to factor in the "select all" option
     if selected_year == 'Select All':
         years = [*np.arange(datetime.now().year,2013,-1)]
@@ -155,18 +125,8 @@ def select_variables(df):
         months = [*range(1,13,1)]
     else:
         months = [selected_month]
-    #
-    if selected_person == 'Simone':
-        person = ['s','sx','dx']
-    else:
-        person = ['d','dx','sx']
-    #   
-    if selected_tag == '':
-        tags_list = tag_list(df)
-    else:
-        tags_list = [selected_tag]
     
-    return years, months, person, tags_list
+    return years, months
 
 def period_card(df_current, df_past, currency):
     df_card_current = df_current.groupby('type',as_index=False)['net'].sum()
@@ -292,7 +252,7 @@ def build_cat_fig(df_current,df_past,df_avg,currency):
         labels={
             'net_current':'Amount',
             'cat':'Category',
-            'diff':'Diff vs prev period'
+            'diff':'Diff vs prev period',
         },
         height=chart_height,
         color_discrete_map={'net_current':'#264653','average':'#969696'}
@@ -301,19 +261,34 @@ def build_cat_fig(df_current,df_past,df_avg,currency):
         xaxis_tickprefix=f'{currency} ',
         xaxis_tickformat=',.0f',
         yaxis_title=None,
-        showlegend=False,
+        showlegend=True,
+        legend=dict(
+            orientation="h",
+            yanchor="top",
+            y=1.06,
+            xanchor="left",
+            x=0,
+            title=None,
+            bgcolor=None),
         hoverlabel=dict(
-            bgcolor="#264653",
-        ),
+            bgcolor="#264653"),
         barmode='group'
     )
     cat_fig.update_traces(
-        hovertemplate = '<i>Diff vs prev period<i>: %{text:0.2f}<extra></extra>'
+        name='Current period amount',
+        selector=dict(name='net_current')
+    )
+    cat_fig.update_traces(
+        name='Average',
+        selector=dict(name='average')
+    )
+    cat_fig.update_traces(
+        hovertemplate = '<i>Diff vs prev period<i>: %{text:0.2f}<extra></extra>',
     )
     
     return cat_fig
 
-def build_sav_rate(df,df_main,p,currency):
+def build_sav_rate(df,df_main,currency):
     df['date'] = pd.to_datetime(df['date'],dayfirst=True)
     df_main['date'] = pd.to_datetime(df_main['date'],dayfirst=True)
     
@@ -326,8 +301,7 @@ def build_sav_rate(df,df_main,p,currency):
         max_date = df.date.max()
         min_date = (max_date - dt.timedelta(days=365)).replace(day=1)
         df_filtered = df_main.loc[(df_main['date'] >= min_date) &
-                                  (df_main['date'] <= max_date) &
-                                  (df_main['paid_by'].isin(p))
+                                  (df_main['date'] <= max_date)
                                   ]
     
     sav_rate = df_filtered[(df_filtered['cat'] != 'Savings') & (df_filtered['type'] != 'Investing')]
@@ -398,10 +372,9 @@ def build_sav_rate(df,df_main,p,currency):
         )
     return sav_rate_fig
 
-def build_net_worth(df_main,p):
+def build_net_worth(df_main):
     # Filter correct person, exclude certain transactions and add cumulative sum day by day 
-    df_main['cumsum'] = df_main[
-        (df_main['person'].isin(p)) & 
+    df_main['cumsum'] = df_main[ 
         (df_main['exclude_from_budget'] != 'x') & 
         (df_main['type'] != 'Savings')
         ]['net'].cumsum(axis=0)
@@ -462,11 +435,9 @@ def categorize_avg(row):
     else:
         return 0
 
-def mean_monthly_values(df_main,p):
+def mean_monthly_values(df_main):
     df = df_main[
-        (df_main['year'] == (pd.to_datetime(dt.date.today()).year-1)) & ##### if condition per considerare ultimi 6 mesi?
-        (df_main['person'].isin(p))
-        ]
+        (df_main['year'] == (pd.to_datetime(dt.date.today()).year-1))]
     df = df.groupby(['month','cat'],as_index=False)['net'].sum()
     df = df.groupby('cat',as_index=False).agg(
         sum=('net','sum'),
@@ -479,13 +450,13 @@ def mean_monthly_values(df_main,p):
     
     return df
 
-def render_ui(df,y,m,p,t,currency):
-    df_current = current_period(df,y,m,p,t)
-    df_past = past_period(df,y,m,p)
-    df_avg = mean_monthly_values(df,p)
+def render_ui(df,y,m,currency):
+    df_current = current_period(df,y,m)
+    df_past = past_period(df,y,m)
+    df_avg = mean_monthly_values(df)
     cat_fig= build_cat_fig(df_current,df_past,df_avg,currency)
-    sav_rate_fig = build_sav_rate(df_current,df,p,currency)
-    net_worth_fig = build_net_worth(df,p)
+    sav_rate_fig = build_sav_rate(df_current,df,currency)
+    net_worth_fig = build_net_worth(df)
     df_current['date'] = pd.to_datetime(df_current['date']).dt.strftime('%m/%d/%Y')
     
     col1,col2 = st.columns(2)
@@ -501,17 +472,13 @@ def render_ui(df,y,m,p,t,currency):
     
 def main():
     currency = currency_button()
-    df_dkk, df_eur, time = load_transform_data()
+    df_dkk, df_eur = load_transform_data()
     df_main = df_dkk.copy() if currency == 'kr' else df_eur.copy()
-    
-    reload_data() # This reload the google sheet data
+
     st.title('Monthly budget dashboard')
-    with st.sidebar:
-        st.write(f'Last updated: {time}')
 
     # This return the parameters for later filtering
-    years, months, person, tags_list = select_variables(df_main)    
-    render_ui(df_main, years, months, person, tags_list, currency)    
+    years, months = select_variables(df_main)    
+    render_ui(df_main, years, months, currency)    
 
 main()
-        
