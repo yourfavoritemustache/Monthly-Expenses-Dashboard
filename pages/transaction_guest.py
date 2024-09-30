@@ -285,6 +285,8 @@ def build_cat_fig(df_current,df_past,df_avg,currency):
     cat_fig.update_traces(
         hovertemplate = '<i>Diff vs prev period<i>: %{text:0.2f}<extra></extra>',
     )
+    cat_fig.layout.xaxis.fixedrange = True
+    cat_fig.layout.yaxis.fixedrange = True
     
     return cat_fig
 
