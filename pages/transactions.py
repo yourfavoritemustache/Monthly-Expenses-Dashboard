@@ -20,7 +20,7 @@ def currency_button():
         c = 'kr' if selected_currency == 'DKK' else '€'
     return c
 
-@st.cache_data()
+@st.cache_data(ttl=86400)
 def load_transform_data():
     ## Load data and transform data
     # Initialize Google sheet API call
