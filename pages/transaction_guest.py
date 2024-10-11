@@ -113,7 +113,7 @@ def select_variables(df):
     selected_month = month.selectbox(
         'Select month:',
        ['Select All',*range(1,13,1)],
-        index=(datetime.now().month)
+        index=0
     )
     # Series to if statement to factor in the "select all" option
     if selected_year == 'Select All':
